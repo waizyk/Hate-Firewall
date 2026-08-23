@@ -3,7 +3,9 @@ services:
     name: hate-firewall
     runtime: node
     plan: free
-    buildCommand: npm ci && npm run build
+    # NODE_ENV=production is also present during Render's build phase, so
+    # explicitly install the Vite dev dependency before compiling the UI.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
