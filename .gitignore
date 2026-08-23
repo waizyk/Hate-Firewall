@@ -31,9 +31,11 @@ playwright-report/
 test-results/
 *.png
 
-# Agent/runtime caches
+# Agent/runtime caches and local credentials
 .arena/
 .cache/
+.config/
+.gitconfig
 .local/
 .npm/
 .sudo_as_admin_successful
