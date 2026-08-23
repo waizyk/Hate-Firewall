@@ -34,5 +34,7 @@ test-results/
 # Agent/runtime caches
 .arena/
 .cache/
+.local/
 .npm/
 .sudo_as_admin_successful
+hate-firewall-preview.html
