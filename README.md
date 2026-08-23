@@ -4,6 +4,8 @@ A cybersecurity-style, explainable AI moderation operations dashboard. Hate Fire
 
 > **MVP notice:** This is a product prototype, not a production moderation system. Sampled public-signal counts are operational context, not platform-wide prevalence estimates.
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/waizyk/Hate-Firewall)
+
 ## Features
 
 - Live pipeline metrics, decision distribution, confidence, and intervention telemetry
