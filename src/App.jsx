@@ -174,6 +174,7 @@ const networkEdges = [
 
 const navItems = [
   { id: 'overview', label: 'Overview', icon: Gauge },
+  { id: 'lab', label: 'Judge Lab', icon: Sparkles, count: 'TRY' },
   { id: 'incidents', label: 'Incident Queue', icon: ShieldAlert, count: 12 },
   { id: 'campaigns', label: 'Campaign Graph', icon: Network, count: 3 },
   { id: 'sources', label: 'Signal Sources', icon: Database },
@@ -469,13 +470,136 @@ function IncidentDrawer({ incident, onClose, onAction, tab, setTab }) {
   )
 }
 
-function Overview({ incidents, onSelect, query, paused, feedIndex, selectedNode, setSelectedNode, liveData }) {
+const judgeSamples = [
+  {
+    label: 'Legitimate criticism', tone: 'clear',
+    text: 'I disagree with this religious doctrine and think the proposed blasphemy law would restrict free expression.',
+    context: 'standalone',
+  },
+  {
+    label: 'Group exclusion', tone: 'critical',
+    text: 'No Muslims should be hired for public-facing jobs. Share this so every employer follows the same rule.',
+    context: 'standalone',
+  },
+  {
+    label: 'Counterspeech', tone: 'context',
+    text: 'Quoting a leaflet for documentation: “Keep Muslims out.” This message is hateful and our community should reject it.',
+    context: 'counterspeech',
+  },
+]
+
+function JudgeLab({ onInspect }) {
+  const [text, setText] = useState('')
+  const [context, setContext] = useState('standalone')
+  const [result, setResult] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+
+  const loadSample = sample => {
+    setText(sample.text)
+    setContext(sample.context)
+    setResult(null)
+    setError('')
+  }
+
+  const submit = async event => {
+    event.preventDefault()
+    if (text.trim().length < 3 || loading) return
+    setLoading(true)
+    setError('')
+    setResult(null)
+    try {
+      const response = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ text, context }),
+      })
+      const payload = await response.json()
+      if (!response.ok) throw new Error(payload.error || 'Analysis failed')
+      setResult(payload)
+    } catch (requestError) {
+      setError(requestError.message || 'The analysis service is unavailable. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const dimensions = result ? [
+    ['Target', result.target, ScanSearch],
+    ['Intent', result.intent, Zap],
+    ['Hate severity', `${result.severity} · ${result.severityScore}/100`, ShieldAlert],
+    ['Confidence', `${result.confidence}%`, Gauge],
+    ['Context', result.context, BookOpen],
+    ['Coordination risk', `${result.coordination}%`, Network],
+  ] : []
+
+  return (
+    <>
+      <div className="page-intro judge-intro">
+        <div><div className="eyebrow">INTERACTIVE JUDGE EXPERIENCE</div><h1>Test the firewall</h1><p>Submit a post and inspect the target, intent, severity, context, coordination risk, and recommended intervention.</p></div>
+        <div className="intro-meta"><span><LockKeyhole size={14}/> No submitted text retained</span><span><TerminalSquare size={14}/> Live API analysis</span></div>
+      </div>
+      <div className="judge-layout">
+        <Panel className="judge-compose">
+          <PanelHeader eyebrow="POST ANALYZER" title="Submit content for review" description="Use your own example or load a contrast test below.">
+            <span className="live-pill"><span/> READY</span>
+          </PanelHeader>
+          <form className="judge-form" onSubmit={submit}>
+            <label className="judge-text-label" htmlFor="judge-post"><span>POST TEXT</span><small>{text.length} / 1,500</small></label>
+            <textarea id="judge-post" value={text} maxLength={1500} onChange={event => { setText(event.target.value); setResult(null); setError('') }} placeholder="Paste a social post here…" autoFocus />
+            <div className="sample-heading"><span>QUICK CONTRAST TESTS</span><small>These demonstrate criticism, hate, and context safeguards.</small></div>
+            <div className="judge-samples">
+              {judgeSamples.map(sample => <button type="button" key={sample.label} className={`judge-sample ${sample.tone}`} onClick={() => loadSample(sample)}><i/><span>{sample.label}</span><ChevronRight size={13}/></button>)}
+            </div>
+            <div className="judge-controls">
+              <label><span>SUPPLIED CONTEXT</span><select value={context} onChange={event => { setContext(event.target.value); setResult(null) }}><option value="standalone">Standalone post</option><option value="quotation">Quoted material</option><option value="reporting">News / documentation</option><option value="counterspeech">Counterspeech / condemnation</option></select></label>
+              <button className="primary-button judge-submit" type="submit" disabled={loading || text.trim().length < 3}>{loading ? <RefreshCw size={15} className="spinning"/> : <ScanSearch size={15}/>} {loading ? 'Analyzing…' : 'Analyze post'}</button>
+            </div>
+            {error && <div className="judge-error"><AlertTriangle size={15}/><span>{error}</span></div>}
+          </form>
+          <div className="judge-privacy"><LockKeyhole size={14}/><span>Input is processed in memory for this request and is not written to the connector cache or audit log unless you explicitly open an investigation.</span></div>
+        </Panel>
+
+        {!result ? (
+          <Panel className="judge-waiting">
+            <div className="scanner-visual"><div/><div/><Shield size={34}/></div>
+            <div><div className="eyebrow">AWAITING SIGNAL</div><h2>Analysis appears here</h2><p>The result will expose all six decision dimensions, supporting evidence, the criticism safeguard, and a proportional intervention.</p></div>
+            <div className="waiting-steps"><span><b>01</b> Target</span><span><b>02</b> Intent</span><span><b>03</b> Harm</span><span><b>04</b> Context</span><span><b>05</b> Coordination</span><span><b>06</b> Action</span></div>
+          </Panel>
+        ) : (
+          <Panel className="judge-result">
+            <div className="judge-result-head">
+              <div className={`judge-score tone-${statusTone(result.severity)}`}><strong>{result.severityScore}</strong><span>RISK / 100</span></div>
+              <div><div className="eyebrow">FIREWALL RECOMMENDATION</div><h2>{result.action}</h2><p>{result.policy} · {result.processingMs}ms · {result.confidence}% confidence</p></div>
+              <span className={`severity-chip tone-${statusTone(result.severity)}`}>{result.severity}</span>
+            </div>
+            <div className="lab-dimensions">
+              {dimensions.map(([label, value, Icon]) => <div key={label}><span className="lab-icon"><Icon size={15}/></span><p><small>{label}</small><b>{value}</b></p></div>)}
+            </div>
+            <div className="judge-explanation">
+              <div><Sparkles size={16}/><b>Why this decision</b></div><p>{result.why}</p>
+              <div className="distinction"><ShieldCheck size={17}/><span><b>Criticism vs. hate check</b>{result.distinction}</span></div>
+            </div>
+            <div className="judge-evidence"><span>DETECTED EVIDENCE</span><div>{result.evidence.map(item => <em key={`${item.label}-${item.phrase}`}>{item.phrase}<small>{item.label}</small></em>)}</div></div>
+            <div className="judge-result-actions">
+              <div><Info size={14}/><span>{result.disclosure}</span></div>
+              <button className="primary-button" onClick={() => onInspect(result)}><FileSearch size={15}/> Open full investigation <ChevronRight size={14}/></button>
+            </div>
+          </Panel>
+        )}
+      </div>
+      <div className="principle-banner judge-principle"><ShieldCheck size={20}/><div><b>Rights-preserving boundary</b><span>The engine tests protected-group targeting separately from criticism of religion, doctrine, governments, laws, policies, and individual conduct. Context can change the outcome.</span></div><button onClick={() => loadSample(judgeSamples[0])}><Sparkles size={14}/> Try criticism test</button></div>
+    </>
+  )
+}
+
+function Overview({ incidents, onSelect, onOpenLab, query, paused, feedIndex, selectedNode, setSelectedNode, liveData }) {
   const projected = liveData?.aggregate?.projectedPerMinute
   return (
     <>
       <div className="page-intro">
         <div><div className="eyebrow">REAL-TIME MODERATION OPERATIONS</div><h1>Firewall overview</h1><p>Explainable protection against group-directed hate without suppressing legitimate criticism.</p></div>
-        <div className="intro-meta"><span><Clock3 size={14}/> Window: last 60 min</span><span><Server size={14}/> ZA region · edge-03</span></div>
+        <div className="overview-intro-actions"><button className="primary-button" onClick={onOpenLab}><Sparkles size={14}/> Test a post</button><div className="intro-meta"><span><Clock3 size={14}/> Window: last 60 min</span><span><Server size={14}/> ZA region · edge-03</span></div></div>
       </div>
       <div className="metrics-grid">
         <MetricCard label="Content analyzed" value={projected ? projected.toLocaleString() : '2,847'} unit="/min" change="12.4%" icon={Activity} values={[11,13,12,15,16,18,17,21]} />
@@ -684,6 +808,14 @@ export default function App() {
     setTimeout(() => setToast(null), 3200)
   }
 
+  const inspectJudgeResult = result => {
+    setIncidents(current => [result, ...current.filter(item => item.id !== result.id)])
+    setSelectedIncident(result)
+    setDrawerTab('Decision')
+    const timestamp = formatClock(new Date())
+    setAudit(current => [{ time: timestamp, type: 'system', title: `Judge Lab analysis opened: ${result.id}`, detail: `${result.action} recommended at ${result.confidence}% confidence. Submitted text was added to this in-memory review session.`, actor: 'judge-lab' }, ...current])
+  }
+
   const sourceStatus = useMemo(() => liveData?.mode === 'live' ? 'PUBLIC API LIVE' : liveData?.mode === 'hybrid' ? 'HYBRID SIGNALS' : 'SIMULATION LIVE', [liveData])
 
   return (
@@ -705,7 +837,8 @@ export default function App() {
           <div className="topbar-status"><span className="live-pill"><span/>{sourceStatus}</span><div className="clock"><Clock3 size={14}/>{formatClock(now)} <small>SAST</small></div><button className="pause-button" onClick={() => setPaused(value => !value)}>{paused ? <Play size={15}/> : <Pause size={15}/>}<span>{paused ? 'Resume' : 'Pause'}</span></button><button className="notification-button"><Bell size={17}/><i/></button></div>
         </header>
         <div className="main-content">
-          {activeView === 'overview' && <Overview incidents={incidents} onSelect={openIncident} query={query} paused={paused} feedIndex={feedIndex} selectedNode={selectedNode} setSelectedNode={setSelectedNode} liveData={liveData}/>} 
+          {activeView === 'overview' && <Overview incidents={incidents} onSelect={openIncident} onOpenLab={() => setActiveView('lab')} query={query} paused={paused} feedIndex={feedIndex} selectedNode={selectedNode} setSelectedNode={setSelectedNode} liveData={liveData}/>} 
+          {activeView === 'lab' && <JudgeLab onInspect={inspectJudgeResult}/>} 
           {activeView === 'incidents' && <IncidentsView incidents={incidents} onSelect={openIncident} query={query}/>} 
           {activeView === 'campaigns' && <CampaignsView selectedNode={selectedNode} setSelectedNode={setSelectedNode}/>} 
           {activeView === 'sources' && <SourcesView liveData={liveData} loading={loadingLive} onRefresh={() => fetchLive(true)}/>} 

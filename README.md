@@ -8,6 +8,7 @@ A cybersecurity-style, explainable AI moderation operations dashboard. Hate Fire
 
 ## Features
 
+- Interactive **Judge Lab** where anyone can submit a post and receive an immediate explainable decision
 - Live pipeline metrics, decision distribution, confidence, and intervention telemetry
 - Six-part analysis: **target, intent, hate severity, confidence, context, and coordination risk**
 - Explicit criticism-versus-hate safeguard with policy explanations
@@ -28,8 +29,9 @@ npm run dev
 - Dashboard: http://localhost:5173
 - API health: http://localhost:8787/api/health
 - Live signals: http://localhost:8787/api/live-signals
+- Judge analysis: `POST http://localhost:8787/api/analyze` with JSON `{ "text": "...", "context": "standalone" }`
 
-The Vite development server proxies browser requests from `/api/*` to the local Express API.
+The Vite development server proxies browser requests from `/api/*` to the local Express API. Judge Lab submissions are analyzed in memory and are not persisted by the MVP.
 
 ## Production build
 

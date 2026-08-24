@@ -58,6 +58,115 @@ function triageText(text = '') {
   }
 }
 
+const findPhrase = (text, pattern) => text.match(pattern)?.[0] || null
+
+function analyzeSubmittedPost(rawText = '', suppliedContext = 'standalone') {
+  const text = String(rawText).replace(/\s+/g, ' ').trim().slice(0, 1500)
+  const protectedPhrase = findPhrase(text, /\b(muslims?|muslim[- ]owned|islamic people|mosque[- ]goers?|hijab[- ]wearers?)\b/i)
+  const ideaPhrase = findPhrase(text, /\b(islam|qur[’']?an|sharia|religion|religious ideas?|doctrine|theology|beliefs?)\b/i)
+  const governmentPhrase = findPhrase(text, /\b(government|state|regime|minister|president|party|policy|law|legislation|saudi government)\b/i)
+  const individualPhrase = findPhrase(text, /\b(imam|cleric|preacher|official|candidate|mayor|minister)\b/i)
+  const conductPhrase = findPhrase(text, /\b(conduct|audit|funds?|management|decision|performance|statement|record|sentencing|corruption)\b/i)
+  const institutionPhrase = findPhrase(text, /\b(mosques?|religious institutions?|community centres?)\b/i)
+
+  const exclusionPhrase = findPhrase(text, /\b(deport(?:ed|ation)?|ban (?:all )?(?:muslims?|them)|keep (?:muslims?|them) out|boycott|do not hire|don['’]t hire|refuse to hire|expel|no muslims?|exclude|shut (?:down )?(?:every|all) mosque)\b/i)
+  const hostilityPhrase = findPhrase(text, /\b(invaders?|invading|vermin|disease|parasites?|traitors?|enemy within|replace us|can['’]t trust|cannot trust|hate muslims?|disgusting people|inferior)\b/i)
+  const violencePhrase = findPhrase(text, /\b(kill|attack|burn|shoot|bomb|hurt|destroy them|wipe them out)\b/i)
+  const coordinationPhrase = findPhrase(text, /\b(share this|join us|same time|target list|everyone post|forward this|exact caption|flood the replies|at \d{1,2}(?::\d{2})?)\b/i)
+  const counterPhrase = findPhrase(text, /\b(condemn|condemning|reject|rejecting|reporting|documenting|countering|not okay|is hateful|oppose this hatred|stand against)\b/i)
+  const quotePhrase = findPhrase(text, /\b(quote|quoting|quoted|leaflet says|they said|the post says)\b/i)
+  const criticismPhrase = findPhrase(text, /\b(critic(?:ise|ize|ism)|disagree|oppose|debate|scrutiny|accountable|authoritarian|should answer|publish the audit)\b/i)
+
+  const hasProtectedTarget = Boolean(protectedPhrase)
+  const hasHarm = Boolean(exclusionPhrase || hostilityPhrase || violencePhrase)
+  const selectedSafeguard = ['quotation', 'reporting', 'counterspeech'].includes(suppliedContext)
+  const contextSafeguard = Boolean(counterPhrase || (quotePhrase && counterPhrase) || selectedSafeguard)
+  const ideaOrInstitution = Boolean(ideaPhrase || governmentPhrase || (individualPhrase && conductPhrase))
+
+  let score = 4
+  if (hasProtectedTarget) score += 28
+  if (exclusionPhrase) score += 40
+  if (hostilityPhrase) score += 30
+  if (violencePhrase) score += 55
+  if (coordinationPhrase && (hasProtectedTarget || hasHarm || institutionPhrase)) score += 14
+  if (contextSafeguard) score -= 68
+  if (ideaOrInstitution && !hasProtectedTarget && !hasHarm) score -= 10
+  score = Math.max(1, Math.min(99, score))
+
+  const severity = score >= 85 ? 'Severe' : score >= 70 ? 'High' : score >= 50 ? 'Moderate' : score >= 30 ? 'Low' : 'None'
+  const action = score >= 85 ? 'Escalate' : score >= 70 ? 'Moderator Review' : score >= 50 ? 'Reduce Reach' : score >= 30 ? 'Warn' : 'Allow'
+  const status = score >= 85 ? 'critical' : score >= 70 ? 'high' : score >= 50 ? 'medium' : 'clear'
+  const target = hasProtectedTarget
+    ? 'Muslims — protected religious group'
+    : governmentPhrase ? 'Government / policy'
+      : individualPhrase && conductPhrase ? 'Specific individual / conduct'
+        : ideaPhrase ? 'Religion / ideas'
+          : institutionPhrase ? 'Religious institution'
+            : 'No protected-group target detected'
+  const targetShort = hasProtectedTarget ? 'Protected group' : governmentPhrase ? 'Government' : individualPhrase && conductPhrase ? 'Individual conduct' : ideaPhrase ? 'Policy / ideas' : institutionPhrase ? 'Institution' : 'Undetermined'
+  const intent = contextSafeguard
+    ? 'Documentation / counterspeech'
+    : violencePhrase ? 'Violence / incitement'
+      : exclusionPhrase ? 'Exclusion / discrimination'
+        : hostilityPhrase ? 'Group-directed hostility'
+          : coordinationPhrase ? 'Mobilization / coordination'
+            : criticismPhrase || ideaOrInstitution ? 'Legitimate criticism / debate'
+              : 'Neutral or unclear expression'
+  const coordination = coordinationPhrase ? (hasHarm || hasProtectedTarget || institutionPhrase ? 88 : 38) : Math.min(28, Math.max(3, Math.round(score * 0.28)))
+  const confidence = contextSafeguard || (hasProtectedTarget && hasHarm) || ideaOrInstitution ? 95 : hasProtectedTarget || hasHarm ? 88 : 78
+  const contextLabels = {
+    standalone: 'Standalone post; no additional conversation supplied',
+    quotation: 'Quoted material supplied for context',
+    reporting: 'Reporting / documentation context supplied',
+    counterspeech: 'Counterspeech / condemnation context supplied',
+  }
+  const context = contextLabels[suppliedContext] || contextLabels.standalone
+
+  const evidence = []
+  const addEvidence = (phrase, label, detail) => {
+    if (phrase && !evidence.some(item => item.phrase.toLowerCase() === phrase.toLowerCase())) evidence.push({ phrase, label, detail })
+  }
+  addEvidence(protectedPhrase, 'Protected-group reference', 'Identifies Muslims as people rather than only an idea, policy, or institution.')
+  addEvidence(exclusionPhrase, 'Exclusion cue', 'Advocates denying access, participation, employment, or equal treatment.')
+  addEvidence(hostilityPhrase, 'Hostile generalization', 'Attributes a threatening or degrading trait to a group collectively.')
+  addEvidence(violencePhrase, 'Violence cue', 'Contains language associated with physical harm or violent incitement.')
+  addEvidence(coordinationPhrase, 'Mobilization cue', 'Encourages synchronized redistribution or coordinated action.')
+  addEvidence(counterPhrase || quotePhrase, 'Context safeguard', 'Signals quotation, reporting, documentation, or explicit rejection of hateful language.')
+  if (!hasHarm && !hasProtectedTarget) addEvidence(governmentPhrase || ideaPhrase || conductPhrase || criticismPhrase || text.slice(0, 60), 'Non-group target', 'The detected target is an idea, policy, government, conduct, or otherwise lacks a protected-group attack.')
+  if (!evidence.length) addEvidence(text.slice(0, 60), 'No decisive harm marker', 'No strong protected-group harm, exclusion, violence, or coordination signal was detected.')
+
+  let why
+  let distinction
+  if (contextSafeguard) {
+    why = 'The post contains contextual signals of quotation, reporting, documentation, or condemnation. Surface-level harmful wording is not treated as endorsement.'
+    distinction = 'Context safeguard triggered: the apparent hostile phrase is presented in a non-endorsing context. A reviewer should verify surrounding material when impact is high.'
+  } else if (hasProtectedTarget && hasHarm) {
+    why = `The post targets Muslims as people and contains ${violencePhrase ? 'a violence cue' : exclusionPhrase ? 'an exclusion or discrimination cue' : 'a hostile collective generalization'}. The recommendation is proportional to the detected severity.`
+    distinction = 'Criticism safeguard not triggered: the harmful predicate is directed at people based on religious identity, not solely at theology, government policy, or individual conduct.'
+  } else if (ideaOrInstitution && !hasProtectedTarget) {
+    why = 'The post is directed at an idea, government, law, policy, or specific conduct and does not make a harmful claim about Muslims as people.'
+    distinction = 'Legitimate criticism safeguard triggered: strong disagreement with religion, policy, government, or individual conduct is not automatically anti-Muslim hatred.'
+  } else {
+    why = 'The policy engine found no high-confidence combination of protected-group targeting and a harmful predicate. The post remains allowed unless additional context changes the assessment.'
+    distinction = 'No protected-group attack was established. Ambiguous or contextual information can be escalated for human review rather than automatically restricted.'
+  }
+
+  const policy = contextSafeguard ? 'CONTEXT-QUOTE-2.0' : action === 'Allow' ? 'SAFE-CRIT-1.0' : violencePhrase ? 'HG-3.1' : exclusionPhrase ? 'HG-2.1' : hostilityPhrase ? 'HG-2.2' : 'REVIEW-1.0'
+  return {
+    id: `LAB-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
+    age: '0s', source: 'judge-lab', author: 'judge_input', reach: 'single test', content: text,
+    target, targetShort, intent, severity, severityScore: score, confidence, context,
+    coordination, action, status, campaign: coordination >= 70 ? 'Potential pattern' : null, policy,
+    why, distinction, evidence: evidence.slice(0, 6), thread: [],
+    signals: [
+      `${hasProtectedTarget ? 'Protected-group target detected' : 'No protected-group target established'}`,
+      `${contextSafeguard ? 'Context safeguard active' : 'No context override applied'}`,
+      `${coordinationPhrase ? 'Mobilization language detected' : 'No coordination burst data supplied'}`,
+    ],
+    analysisMode: 'Explainable MVP policy engine',
+  }
+}
+
 async function fetchJson(url, timeoutMs = 7000) {
   const started = Date.now()
   const response = await fetch(url, {
@@ -188,6 +297,28 @@ async function buildSignals() {
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'hate-firewall-signal-api', time: nowIso() })
+})
+
+app.post('/api/analyze', (req, res) => {
+  const startedAt = performance.now()
+  const text = req.body?.text
+  const context = req.body?.context || 'standalone'
+  if (typeof text !== 'string' || text.trim().length < 3) {
+    return res.status(400).json({ error: 'Enter at least 3 characters to analyze.' })
+  }
+  if (text.length > 1500) {
+    return res.status(400).json({ error: 'Posts are limited to 1,500 characters in the judge lab.' })
+  }
+  const allowedContexts = ['standalone', 'quotation', 'reporting', 'counterspeech']
+  if (!allowedContexts.includes(context)) {
+    return res.status(400).json({ error: 'Unsupported context type.' })
+  }
+  res.set('cache-control', 'no-store')
+  res.json({
+    ...analyzeSubmittedPost(text, context),
+    processingMs: Math.max(1, Math.round(performance.now() - startedAt)),
+    disclosure: 'This MVP result is generated by an explainable deterministic policy engine and is not a final moderation decision.',
+  })
 })
 
 app.get('/api/live-signals', async (req, res) => {
