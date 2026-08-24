@@ -9,7 +9,38 @@ const ROOT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const cache = { value: null, expiresAt: 0 }
 
 app.disable('x-powered-by')
+app.set('trust proxy', 1)
+app.use((req, res, next) => {
+  res.set({
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'x-frame-options': 'DENY',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+    'cross-origin-resource-policy': 'same-origin',
+  })
+  next()
+})
 app.use(express.json({ limit: '32kb' }))
+
+const analyzeRateWindow = new Map()
+function limitJudgeAnalysis(req, res, next) {
+  const key = req.ip || req.socket.remoteAddress || 'unknown'
+  const now = Date.now()
+  const current = analyzeRateWindow.get(key)
+  const entry = !current || now - current.startedAt >= 60_000 ? { startedAt: now, count: 0 } : current
+  entry.count += 1
+  analyzeRateWindow.set(key, entry)
+  if (analyzeRateWindow.size > 1000) {
+    for (const [ip, value] of analyzeRateWindow) if (now - value.startedAt >= 60_000) analyzeRateWindow.delete(ip)
+  }
+  res.set('x-ratelimit-limit', '30')
+  res.set('x-ratelimit-remaining', String(Math.max(0, 30 - entry.count)))
+  if (entry.count > 30) {
+    res.set('retry-after', '60')
+    return res.status(429).json({ error: 'Judge Lab rate limit reached. Try again in one minute.' })
+  }
+  next()
+}
 
 const nowIso = () => new Date().toISOString()
 const aliasFor = (value = 'public') => `acct_${crypto.createHash('sha256').update(value).digest('hex').slice(0, 6)}`
@@ -79,17 +110,27 @@ function analyzeSubmittedPost(rawText = '', suppliedContext = 'standalone') {
 
   const hasProtectedTarget = Boolean(protectedPhrase)
   const hasHarm = Boolean(exclusionPhrase || hostilityPhrase || violencePhrase)
-  const selectedSafeguard = ['quotation', 'reporting', 'counterspeech'].includes(suppliedContext)
-  const contextSafeguard = Boolean(counterPhrase || (quotePhrase && counterPhrase) || selectedSafeguard)
+  const counterSafeguard = Boolean(counterPhrase || suppliedContext === 'counterspeech')
+  const reportingSafeguard = suppliedContext === 'reporting'
+  const quotationContext = Boolean(quotePhrase || suppliedContext === 'quotation')
+  const contextSafeguard = counterSafeguard || reportingSafeguard
   const ideaOrInstitution = Boolean(ideaPhrase || governmentPhrase || (individualPhrase && conductPhrase))
+  const operationalCoordination = Boolean(coordinationPhrase && (institutionPhrase || /\b(target list|flood the replies|exact caption)\b/i.test(text)))
 
+  // A protected identity mention is not itself a harm signal. Risk rises only when
+  // a group/institution is paired with exclusion, hostility, violence, or an
+  // operational harassment cue.
   let score = 4
-  if (hasProtectedTarget) score += 28
-  if (exclusionPhrase) score += 40
-  if (hostilityPhrase) score += 30
-  if (violencePhrase) score += 55
-  if (coordinationPhrase && (hasProtectedTarget || hasHarm || institutionPhrase)) score += 14
-  if (contextSafeguard) score -= 68
+  if (exclusionPhrase) score += 46
+  if (hostilityPhrase) score += 44
+  if (violencePhrase) score += 62
+  if (hasProtectedTarget && hasHarm) score += 25
+  if (institutionPhrase && hasHarm) score += 20
+  if (coordinationPhrase && hasHarm) score += 14
+  else if (operationalCoordination) score += 52
+  if (counterSafeguard) score -= 85
+  else if (reportingSafeguard) score -= 60
+  else if (quotationContext) score -= 24
   if (ideaOrInstitution && !hasProtectedTarget && !hasHarm) score -= 10
   score = Math.max(1, Math.min(99, score))
 
@@ -112,7 +153,7 @@ function analyzeSubmittedPost(rawText = '', suppliedContext = 'standalone') {
           : coordinationPhrase ? 'Mobilization / coordination'
             : criticismPhrase || ideaOrInstitution ? 'Legitimate criticism / debate'
               : 'Neutral or unclear expression'
-  const coordination = coordinationPhrase ? (hasHarm || hasProtectedTarget || institutionPhrase ? 88 : 38) : Math.min(28, Math.max(3, Math.round(score * 0.28)))
+  const coordination = coordinationPhrase ? (hasHarm || operationalCoordination ? 88 : 34) : Math.min(28, Math.max(3, Math.round(score * 0.28)))
   const confidence = contextSafeguard || (hasProtectedTarget && hasHarm) || ideaOrInstitution ? 95 : hasProtectedTarget || hasHarm ? 88 : 78
   const contextLabels = {
     standalone: 'Standalone post; no additional conversation supplied',
@@ -132,7 +173,7 @@ function analyzeSubmittedPost(rawText = '', suppliedContext = 'standalone') {
   addEvidence(violencePhrase, 'Violence cue', 'Contains language associated with physical harm or violent incitement.')
   addEvidence(coordinationPhrase, 'Mobilization cue', 'Encourages synchronized redistribution or coordinated action.')
   addEvidence(counterPhrase || quotePhrase, 'Context safeguard', 'Signals quotation, reporting, documentation, or explicit rejection of hateful language.')
-  if (!hasHarm && !hasProtectedTarget) addEvidence(governmentPhrase || ideaPhrase || conductPhrase || criticismPhrase || text.slice(0, 60), 'Non-group target', 'The detected target is an idea, policy, government, conduct, or otherwise lacks a protected-group attack.')
+  if (!hasHarm && !operationalCoordination) addEvidence(governmentPhrase || ideaPhrase || conductPhrase || criticismPhrase || text.slice(0, 60), hasProtectedTarget ? 'No harmful predicate' : 'Non-group target', hasProtectedTarget ? 'The identity reference is not paired with exclusion, hostility, violence, or a harmful operational cue.' : 'The detected target is an idea, policy, government, conduct, or otherwise lacks a protected-group attack.')
   if (!evidence.length) addEvidence(text.slice(0, 60), 'No decisive harm marker', 'No strong protected-group harm, exclusion, violence, or coordination signal was detected.')
 
   let why
@@ -156,12 +197,12 @@ function analyzeSubmittedPost(rawText = '', suppliedContext = 'standalone') {
     id: `LAB-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
     age: '0s', source: 'judge-lab', author: 'judge_input', reach: 'single test', content: text,
     target, targetShort, intent, severity, severityScore: score, confidence, context,
-    coordination, action, status, campaign: coordination >= 70 ? 'Potential pattern' : null, policy,
+    coordination, action, status, campaign: null, policy,
     why, distinction, evidence: evidence.slice(0, 6), thread: [],
     signals: [
       `${hasProtectedTarget ? 'Protected-group target detected' : 'No protected-group target established'}`,
-      `${contextSafeguard ? 'Context safeguard active' : 'No context override applied'}`,
-      `${coordinationPhrase ? 'Mobilization language detected' : 'No coordination burst data supplied'}`,
+      `${contextSafeguard ? 'Context safeguard active' : quotationContext ? 'Quotation context lowers but does not erase risk' : 'No context override applied'}`,
+      `${coordinationPhrase ? 'Content-level mobilization cue; no graph corroboration supplied' : 'No coordination burst data supplied'}`,
     ],
     analysisMode: 'Explainable MVP policy engine',
   }
@@ -299,7 +340,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'hate-firewall-signal-api', time: nowIso() })
 })
 
-app.post('/api/analyze', (req, res) => {
+app.post('/api/analyze', limitJudgeAnalysis, (req, res) => {
   const startedAt = performance.now()
   const text = req.body?.text
   const context = req.body?.context || 'standalone'
@@ -359,6 +400,11 @@ if (process.env.NODE_ENV === 'production') {
   })
 }
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Hate Firewall listening on http://0.0.0.0:${PORT}`)
-})
+const isEntryPoint = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+if (isEntryPoint) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Hate Firewall listening on http://0.0.0.0:${PORT}`)
+  })
+}
+
+export { app, analyzeSubmittedPost }

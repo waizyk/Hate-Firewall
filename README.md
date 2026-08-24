@@ -6,10 +6,20 @@ A cybersecurity-style, explainable AI moderation operations dashboard. Hate Fire
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/waizyk/Hate-Firewall)
 
+## 60-second judge walkthrough
+
+1. Open the dashboard and select **Judge Lab** in the sidebar.
+2. Load **Legitimate criticism** and click **Analyze post** — the expected result is **Allow**.
+3. Load **Group exclusion** — the protected-group target, exclusion cue, mobilization cue, severity, and proportional intervention are shown.
+4. Load **Counterspeech** — quotation and explicit condemnation activate the context safeguard.
+5. Choose **Copy JSON** to inspect the structured result or **Full investigation** to review evidence, context, policy trace, and reversible interventions.
+
+Judge Lab input is processed in memory, is not persisted by default, and is limited to 1,500 characters and 30 requests per minute per client.
+
 ## Features
 
 - Interactive **Judge Lab** where anyone can submit a post and receive an immediate explainable decision
-- Live pipeline metrics, decision distribution, confidence, and intervention telemetry
+- Live public-source status plus clearly labeled simulated platform telemetry
 - Six-part analysis: **target, intent, hate severity, confidence, context, and coordination risk**
 - Explicit criticism-versus-hate safeguard with policy explanations
 - Clickable incident investigations with evidence spans, conversation context, and policy trace
@@ -23,8 +33,11 @@ A cybersecurity-style, explainable AI moderation operations dashboard. Hate Fire
 
 ```bash
 npm install
+npm test
 npm run dev
 ```
+
+The regression suite covers neutral identity references, legitimate criticism, group exclusion, hostility, violence, quotation, reporting, counterspeech, and content-level coordination cues.
 
 - Dashboard: http://localhost:5173
 - API health: http://localhost:8787/api/health
@@ -52,7 +65,18 @@ The repository includes a Render Blueprint in [`render.yaml`](./render.yaml).
 3. Connect this GitHub repository.
 4. Review the `hate-firewall` web service and deploy it.
 
-Render will run `npm ci && npm run build`, start the application with `npm start`, and monitor `/api/health`. No API keys are required for the MVP connectors.
+Render will run `npm ci --include=dev && npm run build`, start the application with `npm start`, and monitor `/api/health`. No API keys are required for the MVP connectors.
+
+## How the MVP is structured
+
+```text
+Browser dashboard
+  ├─ POST /api/analyze ── explainable policy engine ── structured decision
+  ├─ GET /api/live-signals ── Google News RSS + Mastodon ── redacted sample
+  └─ investigation UI ── in-memory analyst action + audit demonstration
+```
+
+The Judge Lab currently uses a deterministic, explainable policy engine rather than claiming an externally validated machine-learning model. It is designed so a model provider can later sit behind the same structured API contract. The coordinated-campaign graph and platform-scale telemetry demonstrate the intended product workflow and are not claims of a live platform integration.
 
 ## Live public-signal connectors
 

@@ -269,7 +269,7 @@ function DecisionSnapshot() {
   ]
   return (
     <Panel className="snapshot-panel">
-      <PanelHeader eyebrow="DECISION DISTRIBUTION" title="Firewall outcomes" description="Last 60 minutes" />
+      <PanelHeader eyebrow="DECISION DISTRIBUTION" title="Firewall outcomes" description="Simulated 60-minute platform window" />
       <div className="decision-total"><span>86,410</span><small>decisions</small><b><BadgeCheck size={13}/> 99.97% pipeline health</b></div>
       <div className="decision-bars">
         {rows.map(row => (
@@ -279,7 +279,7 @@ function DecisionSnapshot() {
           </div>
         ))}
       </div>
-      <div className="guardrail"><ShieldCheck size={16}/><div><b>Criticism safeguard</b><span>8,214 posts correctly separated from group-directed hate</span></div></div>
+      <div className="guardrail"><ShieldCheck size={16}/><div><b>Criticism safeguard</b><span>8,214 simulated posts routed through the criticism boundary</span></div></div>
     </Panel>
   )
 }
@@ -361,7 +361,7 @@ function LiveStream({ paused, feedIndex }) {
   const items = [...streamItems.slice(feedIndex % streamItems.length), ...streamItems.slice(0, feedIndex % streamItems.length)].slice(0, 4)
   return (
     <Panel className="live-stream-panel">
-      <PanelHeader eyebrow="EVENT STREAM" title="Live classification feed" description="Redacted model decisions · newest first">
+      <PanelHeader eyebrow="EVENT STREAM" title="Simulated classification feed" description="Redacted policy-engine decisions · newest first">
         <span className={`live-pill ${paused ? 'muted' : ''}`}><span/> {paused ? 'PAUSED' : 'STREAMING'}</span>
       </PanelHeader>
       <div className="stream-list">
@@ -397,7 +397,7 @@ function IncidentDrawer({ incident, onClose, onAction, tab, setTab }) {
         </div>
         <div className="drawer-status">
           <div className={`risk-emblem tone-${statusTone(incident.severity)}`}><ShieldAlert size={22}/></div>
-          <div><span>AI RECOMMENDATION</span><b>{incident.action}</b><small>{incident.policy}</small></div>
+          <div><span>ENGINE RECOMMENDATION</span><b>{incident.action}</b><small>{incident.policy}</small></div>
           <div className="decision-confidence"><b>{incident.confidence}%</b><span>confidence</span></div>
         </div>
         <div className="drawer-tabs">
@@ -407,7 +407,7 @@ function IncidentDrawer({ incident, onClose, onAction, tab, setTab }) {
           {tab === 'Decision' && (
             <>
               <div className="explanation-card">
-                <div className="explanation-title"><Sparkles size={16}/><b>Why this decision</b><span>EXPLAINER v4.3</span></div>
+                <div className="explanation-title"><Sparkles size={16}/><b>Why this decision</b><span>POLICY ENGINE MVP-1.1</span></div>
                 <p>{incident.why}</p>
                 <div className="distinction"><ShieldCheck size={17}/><span><b>Criticism vs. hate check</b>{incident.distinction}</span></div>
               </div>
@@ -430,7 +430,7 @@ function IncidentDrawer({ incident, onClose, onAction, tab, setTab }) {
           )}
           {tab === 'Evidence' && (
             <>
-              <div className="evidence-summary"><Radar size={18}/><div><b>{incident.evidence.length} semantic evidence markers</b><span>Markers show model-relevant spans, not a keyword-only decision.</span></div></div>
+              <div className="evidence-summary"><Radar size={18}/><div><b>{incident.evidence.length} policy evidence markers</b><span>Markers expose the deterministic cues used by the MVP engine.</span></div></div>
               <div className="evidence-list">
                 {incident.evidence.map((item, i) => (
                   <div className="evidence-item" key={item.phrase}>
@@ -494,12 +494,42 @@ function JudgeLab({ onInspect }) {
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
 
   const loadSample = sample => {
     setText(sample.text)
     setContext(sample.context)
     setResult(null)
     setError('')
+    setCopied(false)
+  }
+
+  const resetLab = () => {
+    setText('')
+    setContext('standalone')
+    setResult(null)
+    setError('')
+    setCopied(false)
+  }
+
+  const copyResult = async () => {
+    if (!result) return
+    const exportResult = {
+      id: result.id, target: result.target, intent: result.intent,
+      severity: result.severity, severityScore: result.severityScore,
+      confidence: result.confidence, context: result.context,
+      coordinationRisk: result.coordination, recommendedAction: result.action,
+      policy: result.policy, explanation: result.why,
+      criticismVsHate: result.distinction, evidence: result.evidence,
+      disclosure: result.disclosure,
+    }
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(exportResult, null, 2))
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2200)
+    } catch {
+      setError('Clipboard access was blocked. You can still inspect the result on screen.')
+    }
   }
 
   const submit = async event => {
@@ -508,6 +538,7 @@ function JudgeLab({ onInspect }) {
     setLoading(true)
     setError('')
     setResult(null)
+    setCopied(false)
     try {
       const response = await fetch('/api/analyze', {
         method: 'POST',
@@ -537,7 +568,7 @@ function JudgeLab({ onInspect }) {
     <>
       <div className="page-intro judge-intro">
         <div><div className="eyebrow">INTERACTIVE JUDGE EXPERIENCE</div><h1>Test the firewall</h1><p>Submit a post and inspect the target, intent, severity, context, coordination risk, and recommended intervention.</p></div>
-        <div className="intro-meta"><span><LockKeyhole size={14}/> No submitted text retained</span><span><TerminalSquare size={14}/> Live API analysis</span></div>
+        <div className="intro-meta"><span><LockKeyhole size={14}/> No submitted text retained</span><span><TerminalSquare size={14}/> Explainable MVP policy API</span></div>
       </div>
       <div className="judge-layout">
         <Panel className="judge-compose">
@@ -583,7 +614,11 @@ function JudgeLab({ onInspect }) {
             <div className="judge-evidence"><span>DETECTED EVIDENCE</span><div>{result.evidence.map(item => <em key={`${item.label}-${item.phrase}`}>{item.phrase}<small>{item.label}</small></em>)}</div></div>
             <div className="judge-result-actions">
               <div><Info size={14}/><span>{result.disclosure}</span></div>
-              <button className="primary-button" onClick={() => onInspect(result)}><FileSearch size={15}/> Open full investigation <ChevronRight size={14}/></button>
+              <div className="judge-action-buttons">
+                <button className="filter-button" onClick={resetLab}><RefreshCw size={14}/> Reset</button>
+                <button className="filter-button" onClick={copyResult}>{copied ? <Check size={14}/> : <TerminalSquare size={14}/>} {copied ? 'Copied' : 'Copy JSON'}</button>
+                <button className="primary-button" onClick={() => onInspect(result)}><FileSearch size={15}/> Full investigation <ChevronRight size={14}/></button>
+              </div>
             </div>
           </Panel>
         )}
@@ -598,7 +633,7 @@ function Overview({ incidents, onSelect, onOpenLab, query, paused, feedIndex, se
   return (
     <>
       <div className="page-intro">
-        <div><div className="eyebrow">REAL-TIME MODERATION OPERATIONS</div><h1>Firewall overview</h1><p>Explainable protection against group-directed hate without suppressing legitimate criticism.</p></div>
+        <div><div className="eyebrow">LIVE SOURCES + SIMULATED OPERATIONS</div><h1>Firewall overview</h1><p>Explainable protection against group-directed hate without suppressing legitimate criticism. Platform telemetry is simulated for this MVP.</p></div>
         <div className="overview-intro-actions"><button className="primary-button" onClick={onOpenLab}><Sparkles size={14}/> Test a post</button><div className="intro-meta"><span><Clock3 size={14}/> Window: last 60 min</span><span><Server size={14}/> ZA region · edge-03</span></div></div>
       </div>
       <div className="metrics-grid">
@@ -625,10 +660,10 @@ function Overview({ incidents, onSelect, onOpenLab, query, paused, feedIndex, se
         <CampaignPanel selectedNode={selectedNode} setSelectedNode={setSelectedNode}/>
         <LiveStream paused={paused} feedIndex={feedIndex}/>
         <Panel className="guardrail-panel">
-          <PanelHeader eyebrow="FAIRNESS CONTROL" title="Criticism / hate boundary" description="Last 24h safeguard performance" />
+          <PanelHeader eyebrow="FAIRNESS CONTROL" title="Criticism / hate boundary" description="Illustrative MVP benchmark telemetry" />
           <div className="boundary-score"><div><span>98.7%</span><small>boundary agreement</small></div><svg viewBox="0 0 120 60"><path d="M8 52 Q30 49 42 39 T68 28 T112 8" fill="none" stroke="#68a4ff" strokeWidth="3"/><path d="M8 52 Q30 49 42 39 T68 28 T112 8 L112 60 L8 60Z" fill="url(#areaFill)" opacity=".4"/></svg></div>
           <div className="boundary-list"><div><span>Religion / doctrine criticism</span><b>5,184 allowed</b></div><div><span>Government / policy criticism</span><b>2,431 allowed</b></div><div><span>Individual conduct criticism</span><b>599 allowed</b></div><div className="review"><span>Boundary cases to review</span><b>31 queued</b></div></div>
-          <div className="guardrail"><ShieldCheck size={16}/><div><b>Safeguard healthy</b><span>No protected-viewpoint drift detected in current window.</span></div></div>
+          <div className="guardrail"><ShieldCheck size={16}/><div><b>Safeguard demo active</b><span>Illustrative checks separate viewpoint criticism from group-directed harm.</span></div></div>
         </Panel>
       </div>
     </>
@@ -640,7 +675,7 @@ function IncidentsView({ incidents, onSelect, query }) {
   const displayed = filter === 'All' ? incidents : filter === 'Protected-group hate' ? incidents.filter(i => i.targetShort === 'Protected group') : filter === 'Legitimate criticism' ? incidents.filter(i => i.action === 'Allow') : incidents.filter(i => i.coordination > 70)
   return (
     <>
-      <div className="page-intro"><div><div className="eyebrow">TRIAGE + INVESTIGATION</div><h1>Incident queue</h1><p>Review model reasoning, evidence, context, and recommended interventions.</p></div><button className="primary-button"><ShieldCheck size={15}/> Start review session</button></div>
+      <div className="page-intro"><div><div className="eyebrow">TRIAGE + INVESTIGATION</div><h1>Incident queue</h1><p>Review policy-engine reasoning, evidence, context, and recommended interventions.</p></div><button className="primary-button"><ShieldCheck size={15}/> Start review session</button></div>
       <div className="queue-summary"><div><span>OPEN</span><b>12</b><small>3 critical</small></div><div><span>OLDEST</span><b>7m 12s</b><small>within 15m SLA</small></div><div><span>HUMAN AGREEMENT</span><b>96.8%</b><small>last 500 reviews</small></div><div><span>APPEAL REVERSAL</span><b>1.7%</b><small>30-day average</small></div></div>
       <Panel className="full-table-panel">
         <PanelHeader eyebrow="DECISION WORKBENCH" title="Active incidents" description={`${displayed.length} incidents in current view`}>
@@ -724,7 +759,7 @@ function SourcesView({ liveData, loading, onRefresh }) {
 function AuditView({ audit }) {
   return (
     <>
-      <div className="page-intro"><div><div className="eyebrow">ACCOUNTABILITY + OVERSIGHT</div><h1>Audit trail</h1><p>Immutable-style record of model decisions, human actions, and policy changes.</p></div><button className="filter-button"><ExternalLink size={14}/> Export log</button></div>
+      <div className="page-intro"><div><div className="eyebrow">ACCOUNTABILITY + OVERSIGHT</div><h1>Audit trail</h1><p>Immutable-style demonstration of policy-engine decisions, human actions, and policy changes.</p></div><button className="filter-button"><ExternalLink size={14}/> Export log</button></div>
       <div className="audit-layout">
         <Panel className="audit-panel">
           <PanelHeader eyebrow="RECENT EVENTS" title="Decision history" description="All times shown in Africa/Johannesburg" />
@@ -758,7 +793,7 @@ export default function App() {
     { time: '19:08:51', type: 'human', title: 'Incident HF-48271 confirmed', detail: 'Reviewer accepted protected-group targeting and employment-exclusion labels.', actor: 'analyst-04' },
     { time: '19:08:44', type: 'system', title: 'Campaign cluster Cinder-17 created', detail: 'Cross-source similarity threshold exceeded at 0.91.', actor: 'coordination-model' },
     { time: '19:04:10', type: 'action', title: 'Context safeguard allowed quotation', detail: 'HF-48260 classified as documentation and explicit counterspeech.', actor: 'context-model' },
-    { time: '18:57:33', type: 'system', title: 'Policy bundle verified', detail: 'HF policy v4.3 signature and evaluation checks passed.', actor: 'policy-registry' },
+    { time: '18:57:33', type: 'system', title: 'Policy bundle verified', detail: 'HF policy MVP-1.1 signature and evaluation checks passed.', actor: 'policy-registry' },
   ])
 
   const fetchLive = async (force = false) => {
@@ -822,11 +857,11 @@ export default function App() {
     <div className="app-shell">
       <aside className={`sidebar ${mobileNav ? 'mobile-open' : ''}`}>
         <div className="brand"><div className="brand-mark"><Shield size={23}/><span/></div><div><b>HATE</b><strong>FIREWALL</strong></div></div>
-        <div className="workspace-label">COMMAND CENTER <span>v4.3</span></div>
+        <div className="workspace-label">COMMAND CENTER <span>MVP 1.1</span></div>
         <nav>{navItems.map(item => <button key={item.id} className={activeView === item.id ? 'active' : ''} onClick={() => { setActiveView(item.id); setMobileNav(false) }}><item.icon size={17}/><span>{item.label}</span>{item.count && <em>{item.count}</em>}</button>)}</nav>
         <div className="nav-section-label">SYSTEM</div>
         <nav className="secondary-nav"><button><Bot size={17}/><span>Model Registry</span></button><button><BookOpen size={17}/><span>Policy Studio</span></button><button><Settings size={17}/><span>Settings</span></button></nav>
-        <div className="system-card"><div><span className="system-orb"><i/></span><b>Firewall active</b></div><p>All classifiers operational</p><div><span>p95 latency</span><b>118ms</b></div></div>
+        <div className="system-card"><div><span className="system-orb"><i/></span><b>Policy engine active</b></div><p>Live feeds + demo stream</p><div><span>p95 latency</span><b>118ms</b></div></div>
         <div className="sidebar-user"><div className="avatar">AK</div><div><b>Analyst K.</b><span>Trust & Safety</span></div><button><ChevronDown size={14}/></button></div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation"/>}
