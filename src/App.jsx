@@ -862,7 +862,7 @@ export default function App() {
         <div className="nav-section-label">SYSTEM</div>
         <nav className="secondary-nav"><button><Bot size={17}/><span>Model Registry</span></button><button><BookOpen size={17}/><span>Policy Studio</span></button><button><Settings size={17}/><span>Settings</span></button></nav>
         <div className="system-card"><div><span className="system-orb"><i/></span><b>Policy engine active</b></div><p>Live feeds + demo stream</p><div><span>p95 latency</span><b>118ms</b></div></div>
-        <div className="sidebar-user"><div className="avatar">AK</div><div><b>Analyst K.</b><span>Trust & Safety</span></div><button><ChevronDown size={14}/></button></div>
+        <div className="sidebar-user"><div className="avatar">AK</div><div><b>Ace Khan</b><span>Ace Tech · Builder</span></div><button aria-label="Creator profile"><ChevronDown size={14}/></button></div>
       </aside>
       {mobileNav && <button className="mobile-scrim" onClick={() => setMobileNav(false)} aria-label="Close navigation"/>}
       <main className="main-shell">
@@ -878,6 +878,13 @@ export default function App() {
           {activeView === 'campaigns' && <CampaignsView selectedNode={selectedNode} setSelectedNode={setSelectedNode}/>} 
           {activeView === 'sources' && <SourcesView liveData={liveData} loading={loadingLive} onRefresh={() => fetchLive(true)}/>} 
           {activeView === 'audit' && <AuditView audit={audit}/>} 
+          <footer className="app-signature" aria-label="Creator credit">
+            <span>BUILT BY</span>
+            <strong>Ace Khan</strong>
+            <i aria-hidden="true"/>
+            <Shield size={13}/>
+            <b>ACE TECH</b>
+          </footer>
         </div>
       </main>
       <IncidentDrawer incident={selectedIncident} onClose={() => setSelectedIncident(null)} onAction={takeAction} tab={drawerTab} setTab={setDrawerTab}/>
